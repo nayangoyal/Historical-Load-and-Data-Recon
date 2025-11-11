@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Upload CSV and View Logs</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+    }
+    #logs {
+      width: 100%;
+      height: 400px;
+      border: 1px solid #ccc;
+      overflow-y: auto;
+      font-family: monospace;
+      white-space: pre-wrap;
+      background: #1e1e1e;
+      color: #dcdcdc;
+      padding: 10px;
+      border-radius: 8px;
+    }
+    #finalOutput {
+      width: 100%;
+      min-height: 200px;
+      border: 1px solid #ccc;
+      background: #f7f7f7;
+      padding: 10px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      border-radius: 8px;
+    }
+    .success { color: #4CAF50; }
+    .error { color: #f44336; }
+    .info { color: #2196F3; }
+    .timestamp { color: #aaa; }
+  </style>
+</head>
+<body>
+  <h2>📤 Upload CSV to Databricks</h2>
+  <!-- === Upload Form === -->
+  <form id="uploadForm">
+    <label>
+      Catalog:
+      <input type="text" name="catalog" value="h_and_r" required />
+    </label><br/>
+    <label>
+      Schema:
+      <input type="text" name="schema" value="default" required />
+    </label><br/><br/>
+
+    <input type="file" name="csvFile" accept=".csv" required />
+    <button type="submit">Upload & Run Job</button>
+  </form>
+
+  <!-- === Log Streaming Output === -->
+  <h3>📜 Workflow Logs:</h3>
+  <div id="logs"></div>
+
+  <!-- === Final Result Output === -->
+  <h3>✅ Final Reconciliation Result:</h3>
+  <pre id="finalOutput">Waiting for job to complete...</pre>
+
+  <!-- === JavaScript Starts === -->
+  <script>
+    const logBox = document.getElementById('logs');
+    const finalBox = document.getElementById('finalOutput');
+
+    // === Real-time Log Streaming via SSE ===
+    const logSource = new EventSource('http://localhost:3000/logs/stream');
+    logSource.onmessage = (event) => {
+      const line = event.data;
+
+      let className = 'info';
+      if (line.includes('✅')) className = 'success';
+      else if (line.includes('❌') || line.includes('⚠️')) className = 'error';
+
+      const span = document.createElement('div');
+      span.className = className;
+      span.textContent = line;
+      logBox.appendChild(span);
+
+      logBox.scrollTop = logBox.scrollHeight;
+    };
+
+    // === Function to poll final result from backend ===
+    const pollFinalResult = (catalog, schema) => {
+      fetch(`http://localhost:3000/final-result?catalog=${catalog}&schema=${schema}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.message) {
+            setTimeout(() => pollFinalResult(catalog, schema), 5000);
+          } else {
+            finalBox.textContent = JSON.stringify(data.logs, null, 2);
+          }
+        })
+        .catch(err => {
+          finalBox.textContent = "❌ Failed to fetch final result";
+        });
+    };
+
+
+    let catalog = 'metadata';
+    let schema = 'metadata_schema';
+    // === Handle File Upload and trigger job ===
+    document.getElementById('uploadForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+
+      catalog = formData.get("catalog");
+      schema = formData.get("schema");
+
+      const res = await fetch('http://localhost:3000/upload-csv', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      alert(data.message || "Something went wrong");
+
+      // Start polling final result after short delay
+      // setTimeout(pollFinalResult, 15000);
+
+      // Start polling final result after short delay
+      setTimeout(() => pollFinalResult(catalog, schema), 15000);
+    };
+  </script>
+</body>
+</html>
