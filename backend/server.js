@@ -170,16 +170,17 @@ async function uploadToVolume(fileName, buffer) {
   if (!host) throw new Error('DATABRICKS_HOST env var is not configured');
   if (!token) throw new Error('PAT_TOKEN env var is not configured');
   const databricksPath = `/Volumes/h_and_r/intput_file/inputs/${fileName}`;
-  const response = await axios.put(
-    `${host}/api/2.0/fs/files${databricksPath}?overwrite=true`,
-    buffer,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/octet-stream'
-      }
+  const url = `${host}/api/2.0/fs/files${databricksPath}?overwrite=true`;
+  // Validate URL format before calling axios (gives a clear error if host is malformed)
+  try { new URL(url); } catch {
+    throw new Error(`DATABRICKS_HOST is invalid — got: "${host}". Must be like https://adb-1234567890.1.azuredatabricks.net`);
+  }
+  const response = await axios.put(url, buffer, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream'
     }
-  );
+  });
   if (response.status !== 204) {
     throw new Error(`Unexpected upload status: ${response.status}`);
   }
@@ -412,6 +413,16 @@ app.get('/health', (req, res) => {
   const vars = ['DATABRICKS_HOST', 'PAT_TOKEN', 'JOB_ID', 'TABLE_TOKEN', 'TABLE_HOST', 'TABLE_PATH', 'MONGODB_URI'];
   const status = {};
   vars.forEach(v => { status[v] = process.env[v] ? '✅ set' : '❌ MISSING'; });
+
+  // Show sanitised DATABRICKS_HOST so format can be verified without exposing secrets
+  const rawHost = process.env.DATABRICKS_HOST || '';
+  const cleanHost = rawHost.replace(/\/$/, '');
+  let hostOk = false;
+  try { new URL(cleanHost); hostOk = true; } catch {}
+  status['DATABRICKS_HOST_value'] = cleanHost
+    ? `${cleanHost.slice(0, 12)}...${cleanHost.slice(-20)} (${hostOk ? '✅ valid URL' : '❌ NOT a valid URL'})`
+    : '(empty)';
+
   res.json(status);
 });
 
