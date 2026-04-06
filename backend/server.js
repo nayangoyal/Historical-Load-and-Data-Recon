@@ -34,14 +34,23 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
+// Read env vars dynamically so they're always fresh (avoids cached empty values on Render)
+const getEnv = () => ({
+  PAT_TOKEN:       process.env.PAT_TOKEN,
+  DATABRICKS_HOST: (process.env.DATABRICKS_HOST || '').replace(/\/$/, ''),
+  JOB_ID:          process.env.JOB_ID,
+  TABLE_TOKEN:     process.env.TABLE_TOKEN,
+  TABLE_HOST:      process.env.TABLE_HOST,
+  TABLE_PATH:      process.env.TABLE_PATH,
+});
+
+// Keep top-level refs for backwards compat with other modules
 const PAT_TOKEN        = process.env.PAT_TOKEN;
 const DATABRICKS_HOST  = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
 const JOB_ID           = process.env.JOB_ID;
-
-// SQL Warehouse credentials (for table-columns and results queries)
-const TABLE_TOKEN = process.env.TABLE_TOKEN;
-const TABLE_HOST  = process.env.TABLE_HOST;
-const TABLE_PATH  = process.env.TABLE_PATH;
+const TABLE_TOKEN      = process.env.TABLE_TOKEN;
+const TABLE_HOST       = process.env.TABLE_HOST;
+const TABLE_PATH       = process.env.TABLE_PATH;
 
 const HEADERS = {
   Authorization: `Bearer ${PAT_TOKEN}`,
@@ -111,6 +120,7 @@ async function saveToHistory(entry) {
 
 /** Open a SQL Warehouse session (with retry for cold-start), run one query, return rows, close session. */
 async function runWarehouseQuery(sql) {
+  const { TABLE_TOKEN, TABLE_HOST, TABLE_PATH } = getEnv();
   let client, session;
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
@@ -156,13 +166,16 @@ function buildCsv(entries) {
 
 /** Upload a Buffer to a Databricks Volume path. */
 async function uploadToVolume(fileName, buffer) {
+  const { DATABRICKS_HOST: host, PAT_TOKEN: token } = getEnv();
+  if (!host) throw new Error('DATABRICKS_HOST env var is not configured');
+  if (!token) throw new Error('PAT_TOKEN env var is not configured');
   const databricksPath = `/Volumes/h_and_r/intput_file/inputs/${fileName}`;
   const response = await axios.put(
-    `${DATABRICKS_HOST}/api/2.0/fs/files${databricksPath}?overwrite=true`,
+    `${host}/api/2.0/fs/files${databricksPath}?overwrite=true`,
     buffer,
     {
       headers: {
-        Authorization: `Bearer ${PAT_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/octet-stream'
       }
     }
@@ -409,8 +422,9 @@ app.get('/job-status', async (req, res) => {
     return res.status(200).json({ status: 'idle', isJobRunning: false });
   }
   try {
-    const response = await axios.get(`${DATABRICKS_HOST}/api/2.1/jobs/runs/get`, {
-      headers: HEADERS,
+    const { DATABRICKS_HOST: host, PAT_TOKEN: token } = getEnv();
+    const response = await axios.get(`${host}/api/2.1/jobs/runs/get`, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       params:  { run_id: sharedState.currentRunId }
     });
     const { life_cycle_state, result_state, state_message } = response.data.state;
@@ -432,9 +446,10 @@ app.get('/job-status', async (req, res) => {
 app.get('/run-history', async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   try {
-    const response = await axios.get(`${DATABRICKS_HOST}/api/2.1/jobs/runs/list`, {
-      headers: HEADERS,
-      params:  { job_id: JOB_ID, limit }
+    const { DATABRICKS_HOST: host, PAT_TOKEN: token, JOB_ID: jobId } = getEnv();
+    const response = await axios.get(`${host}/api/2.1/jobs/runs/list`, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      params:  { job_id: jobId, limit }
     });
     const runs = (response.data.runs || []).map(run => ({
       run_id:           run.run_id,

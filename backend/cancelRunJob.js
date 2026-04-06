@@ -1,20 +1,14 @@
 const axios = require('axios');
-const DATABRICKS_HOST = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '')
-const PAT_TOKEN = process.env.PAT_TOKEN
-
-
-const HEADERS = {
-  Authorization: `Bearer ${PAT_TOKEN}`,
-  'Content-Type': 'application/json'
-};
-
 
 async function cancelRun(runId) {
+  const host  = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
+  const token = process.env.PAT_TOKEN;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   try {
     await axios.post(
-      `${DATABRICKS_HOST}/api/2.1/jobs/runs/cancel`,
+      `${host}/api/2.1/jobs/runs/cancel`,
       { run_id: runId },
-      { headers: HEADERS }
+      { headers }
     );
     console.log(`🛑 Run ${runId} cancelled successfully.`);
   } catch (err) {

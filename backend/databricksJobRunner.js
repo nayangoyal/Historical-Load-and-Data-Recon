@@ -7,31 +7,30 @@ const path = require('path');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const DATABRICKS_HOST = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
-const PAT_TOKEN = process.env.PAT_TOKEN;
-const JOB_ID = process.env.JOB_ID;
-
-const HEADERS = {
-  Authorization: `Bearer ${PAT_TOKEN}`,
-  'Content-Type': 'application/json'
-};
+const getEnv = () => ({
+  DATABRICKS_HOST: (process.env.DATABRICKS_HOST || '').replace(/\/$/, ''),
+  PAT_TOKEN:       process.env.PAT_TOKEN,
+  JOB_ID:          process.env.JOB_ID,
+});
 
 // Terminal states — poll loop exits when either is reached
 const TERMINAL_STATES = ['TERMINATED', 'INTERNAL_ERROR', 'SKIPPED'];
 
 async function triggerAndMonitorJob(logCallback, csvFileName, sharedState) {
+  const { DATABRICKS_HOST, PAT_TOKEN, JOB_ID } = getEnv();
+  const headers = { Authorization: `Bearer ${PAT_TOKEN}`, 'Content-Type': 'application/json' };
   let runId = null;
   try {
     const response = await axios.post(
       `${DATABRICKS_HOST}/api/2.1/jobs/run-now`,
       { job_id: JOB_ID, notebook_params: { file_name: csvFileName } },
-      { headers: HEADERS }
+      { headers }
     );
 
     runId = response.data.run_id;
     sharedState.currentRunId = runId;
     logCallback(`🚀 Job started — Run ID: ${runId}`);
-    await pollJobStatus(runId, logCallback, csvFileName, sharedState);
+    await pollJobStatus(runId, logCallback, csvFileName, sharedState, headers);
   } catch (error) {
     logCallback(`❌ Error triggering job: ${error.response?.data?.message || error.message}`);
     if (runId) await cancelRun(runId);
@@ -44,7 +43,7 @@ async function triggerAndMonitorJob(logCallback, csvFileName, sharedState) {
   }
 }
 
-async function pollJobStatus(runId, logCallback, csvFileName, sharedState) {
+async function pollJobStatus(runId, logCallback, csvFileName, sharedState, headers) {
   const seenParentStatus = {};
   const seenChildRunIds  = new Set();
   let isFinished     = false;
@@ -61,11 +60,12 @@ async function pollJobStatus(runId, logCallback, csvFileName, sharedState) {
     // Non-critical — fall back to iteration index
   }
 
+  const { DATABRICKS_HOST } = getEnv();
   while (!isFinished) {
     await new Promise(res => setTimeout(res, 5000));
     try {
       const response = await axios.get(`${DATABRICKS_HOST}/api/2.1/jobs/runs/get`, {
-        headers: HEADERS,
+        headers,
         params: { run_id: runId }
       });
 
@@ -104,7 +104,8 @@ async function pollJobStatus(runId, logCallback, csvFileName, sharedState) {
             taskRunId,
             seenChildRunIds,
             recordIdToUsecase,
-            logCallback
+            logCallback,
+            headers
           );
         }
       }
@@ -134,11 +135,12 @@ async function pollJobStatus(runId, logCallback, csvFileName, sharedState) {
  * Fetch all child runs of the for-each job that belong to this parent execution.
  * Logs each iteration with the usecase name derived from record_id.
  */
-async function trackForEachChildRuns(forEachRunId, seenChildRunIds, recordIdToUsecase, logCallback) {
+async function trackForEachChildRuns(forEachRunId, seenChildRunIds, recordIdToUsecase, logCallback, headers) {
+  const { DATABRICKS_HOST } = getEnv();
   try {
     // Get the for-each task's run details which includes its iterations
     const resp = await axios.get(`${DATABRICKS_HOST}/api/2.1/jobs/runs/get`, {
-      headers: HEADERS,
+      headers,
       params: { run_id: forEachRunId }
     });
 
