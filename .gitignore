@@ -1,4 +1,23 @@
+# Dependencies
 node_modules/
-# local secrets / env
+frontend/node_modules/
+
+# Environment secrets — NEVER commit this
 .env
-uploads/*.csv
+
+# Uploads and runtime files
+backend/uploads/*.csv
+backend/results_history.json
+backend/server.log
+
+# Test temp files
+tests/_test_tmp/
+
+# Vite build output
+frontend/dist/
+
+# OS / editor junk
+desktop.ini
+.DS_Store
+Thumbs.db
+img.png

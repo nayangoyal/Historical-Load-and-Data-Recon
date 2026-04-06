@@ -1,5 +1,6 @@
 const axios = require('axios');
-
+const DATABRICKS_HOST = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '')
+const PAT_TOKEN = process.env.PAT_TOKEN
 
 
 const HEADERS = {

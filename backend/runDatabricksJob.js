@@ -1,5 +1,9 @@
 const axios = require('axios');
 
+// ==== CONFIGURATION ====
+const DATABRICKS_HOST = process.env.DATABRICKS_HOST;  // double check if it’s "76eb" or "72eb"
+const PAT_TOKEN = process.env.PAT_TOKEN;
+const JOB_ID = process.env.JOB_ID;
 
 
 const HEADERS = {

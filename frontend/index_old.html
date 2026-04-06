@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Databricks Recon Utility</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue:       #1565C0;
+      --blue-light: #E3F2FD;
+      --blue-dark:  #0D47A1;
+      --green:      #2E7D32;
+      --green-bg:   #E8F5E9;
+      --red:        #C62828;
+      --red-bg:     #FFEBEE;
+      --orange:     #E65100;
+      --orange-bg:  #FFF3E0;
+      --bg:         #F0F4F8;
+      --card:       #FFFFFF;
+      --border:     #D0D7DE;
+      --text:       #1A1A2E;
+      --muted:      #6B7280;
+      --header-h:   56px;
+      --tab-h:      44px;
+      --log-h:      220px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    header {
+      height: var(--header-h);
+      background: var(--blue-dark);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    header h1 { font-size: 17px; font-weight: 600; flex: 1; }
+    #statusBadge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.15);
+      letter-spacing: 0.4px;
+    }
+    #statusBadge.running { background: #F57F17; color: #fff; }
+    #statusBadge.done    { background: var(--green); color: #fff; }
+    #cancelBtn {
+      font-size: 12px;
+      padding: 5px 14px;
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 6px;
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      display: none;
+    }
+    #cancelBtn:hover { background: rgba(255,255,255,0.15); }
+    #cancelBtn.visible { display: block; }
+
+    /* ── Tab Navigation ───────────────────────────────────── */
+    nav {
+      height: var(--tab-h);
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      padding: 0 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      border-bottom: 3px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--blue); }
+    .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── Content Area ─────────────────────────────────────── */
+    #content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Cards & Forms ────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--blue);
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px var(--blue-light);
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; font-family: monospace; }
+
+    /* ── Buttons ──────────────────────────────────────────── */
+    .btn {
+      padding: 9px 20px;
+      border-radius: 7px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Source Section (connector-specific) ──────────────── */
+    .source-section { display: none; }
+    .source-section.active { display: block; }
+
+    /* ── Checkbox Groups ──────────────────────────────────── */
+    #columnSelector { display: none; margin-top: 4px; }
+    #columnSelector.visible { display: block; }
+    .checkbox-group-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .checkbox-group-header {
+      background: #F8FAFC;
+      padding: 10px 14px;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .checkbox-group-hint {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .checkbox-group-actions { display: flex; gap: 6px; }
+    .checkbox-list {
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .checkbox-list label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      background: var(--bg);
+      padding: 4px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      user-select: none;
+    }
+    .checkbox-list label:hover { border-color: var(--blue); background: var(--blue-light); }
+    .checkbox-list label input[type=checkbox]:checked + span { color: var(--blue); font-weight: 600; }
+    .chip-numeric { font-size: 10px; color: var(--blue); font-weight: 700; margin-left: 2px; }
+
+    /* ── Upload Tab ───────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--blue);
+      background: var(--blue-light);
+    }
+    .upload-zone input[type=file] { display: none; }
+    .upload-zone-label { font-size: 15px; font-weight: 500; color: var(--muted); display: block; margin-bottom: 8px; }
+    .upload-zone-sub { font-size: 12px; color: var(--muted); }
+    #selectedFileName { margin-top: 10px; font-size: 13px; color: var(--blue); font-weight: 600; }
+
+    /* ── Results Tab ──────────────────────────────────────── */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 14px;
+    }
+    .result-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .result-card-header {
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .result-card-title { font-weight: 700; font-size: 14px; }
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 10px;
+      letter-spacing: 0.5px;
+    }
+    .badge-pass { background: var(--green-bg); color: var(--green); }
+    .badge-fail { background: var(--red-bg); color: var(--red); }
+    .badge-warn { background: var(--orange-bg); color: var(--orange); }
+    .badge-na   { background: #F5F5F5; color: var(--muted); }
+    .result-checks {
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .check-icon { font-size: 14px; }
+    .result-detail-toggle {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      background: #FAFAFA;
+      font-size: 12px;
+      color: var(--blue);
+      cursor: pointer;
+      text-align: center;
+      user-select: none;
+    }
+    .result-detail-toggle:hover { background: var(--blue-light); }
+    .result-detail {
+      display: none;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .result-detail.visible { display: block; }
+    .detail-section { margin-bottom: 10px; }
+    .detail-section h5 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #F0F0F0; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-key { color: var(--muted); }
+    .detail-val { font-weight: 600; font-family: monospace; font-size: 11px; max-width: 200px; overflow-wrap: break-word; text-align: right; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: monospace; margin-top: 6px; }
+    .log-table th { background: #F0F4F8; padding: 4px 6px; text-align: left; border: 1px solid var(--border); }
+    .log-table td { padding: 3px 6px; border: 1px solid var(--border); vertical-align: top; }
+    .log-table tbody tr:nth-child(even) { background: #FAFAFA; }
+    .log-section-toggle { cursor: pointer; color: var(--blue); font-size: 11px; margin-top: 6px; display: block; }
+    .log-section-content { display: none; margin-top: 6px; overflow-x: auto; }
+    .log-section-content.visible { display: block; }
+    #noResults { text-align: center; padding: 60px 20px; color: var(--muted); }
+    #noResults p { margin-top: 8px; font-size: 13px; }
+    .result-card { cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
+    .result-card:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(21,101,192,0.12); }
+
+    /* ── History Run List ─────────────────────────────────── */
+    .history-run {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .history-run:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(21,101,192,0.12); }
+    .history-run-info { display: flex; flex-direction: column; gap: 2px; }
+    .history-run-file { font-weight: 600; font-size: 13px; }
+    .history-run-time { font-size: 11px; color: var(--muted); }
+    .history-run-usecases { font-size: 12px; color: var(--blue); }
+
+    /* ── Modal ────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal-content {
+      width: 90vw;
+      height: 90vh;
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 18px; font-weight: 700; }
+    .modal-close {
+      width: 32px; height: 32px;
+      border: none; background: none;
+      font-size: 20px; cursor: pointer;
+      color: var(--muted);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .modal-body .detail-section { margin-bottom: 20px; }
+    .modal-body .detail-section h5 { font-size: 13px; color: var(--blue); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .modal-body .detail-row { padding: 6px 0; font-size: 13px; }
+    .modal-body .detail-val { max-width: 400px; font-size: 12px; }
+    .modal-body .check-item { font-size: 13px; }
+    .modal-body .log-table { font-size: 12px; }
+    .modal-body .log-table th { padding: 6px 10px; }
+    .modal-body .log-table td { padding: 5px 10px; }
+
+    /* ── Log Panel ────────────────────────────────────────── */
+    #logPanel {
+      height: var(--log-h);
+      background: #0D1117;
+      border-top: 2px solid #30363D;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    #logPanelHeader {
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #30363D;
+      flex-shrink: 0;
+    }
+    #logPanelHeader span { font-size: 12px; font-weight: 600; color: #8B949E; }
+    #clearLogsBtn { font-size: 11px; color: #8B949E; background: none; border: none; cursor: pointer; }
+    #clearLogsBtn:hover { color: #C9D1D9; }
+    #logs {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 14px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    #logs .log-line { padding: 1px 0; }
+    #logs .log-line.success { color: #3FB950; }
+    #logs .log-line.error   { color: #F85149; }
+    #logs .log-line.warn    { color: #E3B341; }
+    #logs .log-line.info    { color: #79C0FF; }
+    #logs .log-line.default { color: #C9D1D9; }
+
+    /* ── Utility ──────────────────────────────────────────── */
+    .hidden { display: none !important; }
+    .mt-12 { margin-top: 12px; }
+    .flex-gap { display: flex; gap: 10px; align-items: center; }
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header>
+  <h1>Databricks Historical Load &amp; Reconciliation</h1>
+  <span id="statusBadge">● IDLE</span>
+  <button id="cancelBtn" onclick="cancelJob()">✕ Cancel Job</button>
+</header>
+
+<!-- ── Tab Navigation ─────────────────────────────────────────────────────── -->
+<nav>
+  <button class="tab-btn active" onclick="switchTab('csv')">📁 Upload CSV</button>
+  <button class="tab-btn"        onclick="switchTab('form')">⚙️ Manual Entry</button>
+  <button class="tab-btn"        onclick="switchTab('results')">📊 Results</button>
+</nav>
+
+<!-- ── Main Content ────────────────────────────────────────────────────────── -->
+<div id="content">
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       TAB 1 — Upload CSV
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <section class="tab-panel active" id="tab-csv">
+    <div class="card">
+      <h3>Upload CSV Configuration File</h3>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('csvFileInput').click()">
+        <input type="file" id="csvFileInput" accept=".csv" onchange="onFileSelected(this)" />
+        <span class="upload-zone-label">Click to browse or drag &amp; drop</span>
+        <span class="upload-zone-sub">Only .csv files accepted</span>
+        <div id="selectedFileName"></div>
+      </div>
+      <div class="mt-12">
+        <button class="btn btn-primary" id="csvUploadBtn" onclick="submitCsvUpload()" disabled>
+          Upload &amp; Run Job
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       TAB 2 — Manual Entry
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <section class="tab-panel" id="tab-form">
+
+    <!-- Run Configuration -->
+    <div class="card">
+      <h3>Run Configuration</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Usecase Name</label>
+          <input type="text" id="f_usecase" placeholder="e.g. sales_recon_2024" />
+        </div>
+        <div class="form-group">
+          <label>Modes</label>
+          <select id="f_modes">
+            <option value="recon">Recon only</option>
+            <option value="historical_load">Historical Load only</option>
+            <option value="historical_load,recon">Both (Historical Load + Recon)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Result Catalog</label>
+          <input type="text" id="f_catalog" value="metadata" />
+        </div>
+        <div class="form-group">
+          <label>Result Schema</label>
+          <input type="text" id="f_schema" value="metadata_schema" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Source Configuration -->
+    <div class="card">
+      <h3>Source Configuration</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Container Type (Source)</label>
+          <select id="f_container_type" onchange="onContainerTypeChange()">
+            <option value="DATABRICKS">DATABRICKS</option>
+            <option value="SQL_SERVER">SQL Server</option>
+            <option value="SNOWFLAKE">Snowflake</option>
+            <option value="BIGQUERY">BigQuery</option>
+            <option value="ADLS">ADLS</option>
+            <option value="S3">S3</option>
+            <option value="REST_API">REST API</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- DATABRICKS source -->
+      <div class="source-section active" data-type="DATABRICKS">
+        <div class="form-row">
+          <div class="form-group"><label>Source Catalog</label><input type="text" id="f_src_catalog" placeholder="h_and_r" /></div>
+          <div class="form-group"><label>Source Schema</label><input type="text" id="f_src_schema" placeholder="djj_testing" /></div>
+          <div class="form-group"><label>Source Table</label><input type="text" id="f_src_table" placeholder="my_source_table" /></div>
+        </div>
+      </div>
+
+      <!-- SQL Server source -->
+      <div class="source-section" data-type="SQL_SERVER">
+        <div class="form-row">
+          <div class="form-group"><label>Host</label><input type="text" id="f_sql_host" /></div>
+          <div class="form-group"><label>Port</label><input type="text" id="f_sql_port" value="1433" /></div>
+          <div class="form-group"><label>Database</label><input type="text" id="f_sql_database" /></div>
+          <div class="form-group"><label>Table</label><input type="text" id="f_sql_table" /></div>
+          <div class="form-group"><label>Username</label><input type="text" id="f_sql_username" /></div>
+          <div class="form-group"><label>Password</label><input type="password" id="f_sql_password" /></div>
+        </div>
+      </div>
+
+      <!-- Snowflake source -->
+      <div class="source-section" data-type="SNOWFLAKE">
+        <div class="form-row">
+          <div class="form-group"><label>Account</label><input type="text" id="f_sf_account" /></div>
+          <div class="form-group"><label>User</label><input type="text" id="f_sf_user" /></div>
+          <div class="form-group"><label>Password</label><input type="password" id="f_sf_password" /></div>
+          <div class="form-group"><label>Warehouse</label><input type="text" id="f_sf_warehouse" /></div>
+          <div class="form-group"><label>Database</label><input type="text" id="f_sf_database" /></div>
+          <div class="form-group"><label>Schema</label><input type="text" id="f_sf_sf_schema" /></div>
+          <div class="form-group"><label>Table</label><input type="text" id="f_sf_table" /></div>
+        </div>
+      </div>
+
+      <!-- BigQuery source -->
+      <div class="source-section" data-type="BIGQUERY">
+        <div class="form-row">
+          <div class="form-group"><label>GCP Project</label><input type="text" id="f_gcp_project" /></div>
+          <div class="form-group"><label>Dataset</label><input type="text" id="f_bq_dataset" /></div>
+          <div class="form-group"><label>Table</label><input type="text" id="f_bq_table" /></div>
+        </div>
+      </div>
+
+      <!-- ADLS source -->
+      <div class="source-section" data-type="ADLS">
+        <div class="form-row">
+          <div class="form-group"><label>Storage Account Name</label><input type="text" id="f_storage_name" /></div>
+          <div class="form-group"><label>Container Name</label><input type="text" id="f_container_name" /></div>
+          <div class="form-group"><label>Source Path</label><input type="text" id="f_adls_path" placeholder="/folder/file.parquet" /></div>
+          <div class="form-group"><label>File Format</label><input type="text" id="f_adls_format" value="parquet" /></div>
+          <div class="form-group"><label>Access Token</label><input type="password" id="f_adls_token" /></div>
+        </div>
+      </div>
+
+      <!-- S3 source -->
+      <div class="source-section" data-type="S3">
+        <div class="form-row">
+          <div class="form-group"><label>S3 Bucket</label><input type="text" id="f_s3_bucket" /></div>
+          <div class="form-group"><label>Source Path</label><input type="text" id="f_s3_path" placeholder="folder/file.parquet" /></div>
+          <div class="form-group"><label>File Format</label><input type="text" id="f_s3_format" value="parquet" /></div>
+          <div class="form-group"><label>AWS Access Key</label><input type="text" id="f_aws_key" /></div>
+          <div class="form-group"><label>AWS Secret Key</label><input type="password" id="f_aws_secret" /></div>
+        </div>
+      </div>
+
+      <!-- REST API source -->
+      <div class="source-section" data-type="REST_API">
+        <div class="form-row">
+          <div class="form-group"><label>API URL</label><input type="text" id="f_api_url" /></div>
+          <div class="form-group"><label>Method</label><select id="f_api_method"><option>GET</option><option>POST</option></select></div>
+          <div class="form-group"><label>Headers (JSON)</label><textarea id="f_api_headers" placeholder='{"Authorization": "Bearer ..."}' style="height:56px"></textarea></div>
+          <div class="form-group"><label>Auth Token</label><input type="password" id="f_api_token" /></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Target Configuration -->
+    <div class="card">
+      <h3>Target Configuration (Databricks)</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Target Catalog</label><input type="text" id="f_tgt_catalog" placeholder="h_and_r" /></div>
+        <div class="form-group"><label>Target Schema</label><input type="text" id="f_tgt_schema" placeholder="djj_testing" /></div>
+        <div class="form-group"><label>Target Table</label><input type="text" id="f_tgt_table" placeholder="my_target_table" /></div>
+      </div>
+    </div>
+
+    <!-- Optional Filters -->
+    <div class="card">
+      <h3>Optional Filters</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Filter Condition</label>
+          <input type="text" id="f_filter_condition" placeholder="e.g. date >= '2024-01-01'" />
+        </div>
+        <div class="form-group">
+          <label>Date Column Format</label>
+          <input type="text" id="f_date_col_format" placeholder="e.g. yyyy-MM-dd" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Column Selection -->
+    <div class="card">
+      <h3>Column Selection</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+        Loads columns from the source table (DATABRICKS) or target table (other connectors) to populate the checkboxes below.
+      </p>
+      <div class="flex-gap">
+        <button class="btn btn-secondary" id="loadColsBtn" onclick="loadColumns()">Load Columns</button>
+        <span id="loadColsStatus" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+
+      <div id="columnSelector">
+        <!-- Columns to Exclude -->
+        <div class="checkbox-group-card mt-12">
+          <div class="checkbox-group-header">
+            <span>Columns to Exclude <span class="checkbox-group-hint">(will be ignored in all checks)</span></span>
+            <div class="checkbox-group-actions">
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('exclude', true)">All</button>
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('exclude', false)">None</button>
+            </div>
+          </div>
+          <div class="checkbox-list" id="cb-exclude"></div>
+        </div>
+
+        <!-- Statistics Columns -->
+        <div class="checkbox-group-card">
+          <div class="checkbox-group-header">
+            <span>Statistics Columns <span class="checkbox-group-hint">(numeric only — mean / min / max)</span></span>
+            <div class="checkbox-group-actions">
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('stats', true)">All</button>
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('stats', false)">None</button>
+            </div>
+          </div>
+          <div class="checkbox-list" id="cb-stats"></div>
+        </div>
+
+        <!-- Checksum Columns -->
+        <div class="checkbox-group-card">
+          <div class="checkbox-group-header">
+            <span>Checksum Columns <span class="checkbox-group-hint">(xxhash64 row-level hash)</span></span>
+            <div class="checkbox-group-actions">
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('checksum', true)">All</button>
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('checksum', false)">None</button>
+            </div>
+          </div>
+          <div class="checkbox-list" id="cb-checksum"></div>
+        </div>
+
+        <!-- Data Quality Columns -->
+        <div class="checkbox-group-card">
+          <div class="checkbox-group-header">
+            <span>Data Quality Columns <span class="checkbox-group-hint">(null / duplicate / missing value checks)</span></span>
+            <div class="checkbox-group-actions">
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('quality', true)">All</button>
+              <button class="btn btn-sm btn-secondary" onclick="selectAll('quality', false)">None</button>
+            </div>
+          </div>
+          <div class="checkbox-list" id="cb-quality"></div>
+        </div>
+      </div>
+
+      <div class="mt-12">
+        <button class="btn btn-primary" id="formSubmitBtn" onclick="submitManualForm()">
+          Submit &amp; Run Job
+        </button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════
+       TAB 3 — Results
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <section class="tab-panel" id="tab-results">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span id="resultsTimestamp" style="font-size:12px;color:var(--muted)"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="fetchAndRenderResults()">Fetch Latest</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadHistory()">Load History</button>
+      </div>
+    </div>
+    <div id="noResults">
+      <div style="font-size:36px">📊</div>
+      <p>No results yet. Run a job to see reconciliation results here.</p>
+    </div>
+    <div id="historyList"></div>
+    <div class="results-grid" id="resultsGrid" style="display:none"></div>
+  </section>
+
+</div><!-- /#content -->
+
+<!-- ── Result Detail Modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="resultModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modalTitle">Result Details</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<!-- ── Log Panel ────────────────────────────────────────────────────────────── -->
+<div id="logPanel">
+  <div id="logPanelHeader" style="cursor:pointer" onclick="toggleLogPanel()">
+    <span id="logPanelTitle">▼ Live Logs</span>
+    <button id="clearLogsBtn" onclick="event.stopPropagation();document.getElementById('logs').innerHTML=''">Clear</button>
+  </div>
+  <div id="logs"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     JavaScript
+═══════════════════════════════════════════════════════════════════════════════ -->
+<script>
+const API = 'http://localhost:3000';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let selectedCsvFile = null;
+let loadedColumns   = [];   // [{ name, data_type, is_numeric }]
+let jobRunning      = false;
+let sseSource       = null;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.textContent.toLowerCase().includes(name === 'csv' ? 'upload' : name === 'form' ? 'manual' : 'result')) {
+      b.classList.add('active');
+    }
+  });
+}
+
+// ── SSE Connection ────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (sseSource) sseSource.close();
+  sseSource = new EventSource(`${API}/logs/stream`);
+  sseSource.onmessage = (e) => appendLog(e.data);
+  sseSource.onerror   = () => setTimeout(connectSSE, 3000);
+}
+
+function appendLog(text) {
+  const logBox = document.getElementById('logs');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  if (text.includes('✅') || text.includes('SUCCESS')) div.classList.add('success');
+  else if (text.includes('❌') || text.includes('FAILED') || text.includes('Error')) div.classList.add('error');
+  else if (text.includes('⚠') || text.includes('SKIPPED')) div.classList.add('warn');
+  else if (text.includes('🚀') || text.includes('▶') || text.includes('📊') || text.includes('📤')) div.classList.add('info');
+  else div.classList.add('default');
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  div.innerHTML = `<span style="color:#6B7280;margin-right:8px">[${ts}]</span>${text.replace(/</g,'&lt;')}`;
+  logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
+
+  // Detect job completion signals
+  if (text === '📊 Results ready.') {
+    fetchAndRenderResults();
+  } else if (text.startsWith('❌ Job ended with state:') || text.includes('was cancelled by user')) {
+    setJobRunning(false);
+  }
+}
+
+// ── Job Status ────────────────────────────────────────────────────────────────
+function setJobRunning(running) {
+  jobRunning = running;
+  const badge  = document.getElementById('statusBadge');
+  const cancel = document.getElementById('cancelBtn');
+  if (running) {
+    badge.textContent = '● RUNNING';
+    badge.className = 'running';
+    cancel.classList.add('visible');
+  } else {
+    badge.textContent = '● IDLE';
+    badge.className = '';
+    cancel.classList.remove('visible');
+  }
+}
+
+function setJobDone() {
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = '● DONE';
+  badge.className = 'done';
+  document.getElementById('cancelBtn').classList.remove('visible');
+  jobRunning = false;
+}
+
+// ── CSV Upload Tab ────────────────────────────────────────────────────────────
+function onFileSelected(input) {
+  selectedCsvFile = input.files[0] || null;
+  document.getElementById('selectedFileName').textContent = selectedCsvFile ? `📄 ${selectedCsvFile.name}` : '';
+  document.getElementById('csvUploadBtn').disabled = !selectedCsvFile;
+}
+
+// Drag-and-drop on upload zone
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.csv')) {
+    selectedCsvFile = file;
+    document.getElementById('selectedFileName').textContent = `📄 ${file.name}`;
+    document.getElementById('csvUploadBtn').disabled = false;
+  }
+});
+
+async function submitCsvUpload() {
+  if (!selectedCsvFile) return;
+  if (jobRunning) { appendLog('⚠ A job is already running — please wait or cancel first.'); return; }
+
+  const formData = new FormData();
+  formData.append('csvFile', selectedCsvFile);
+
+  const btn = document.getElementById('csvUploadBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading...';
+
+  try {
+    const res  = await fetch(`${API}/upload-csv`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    appendLog(`📁 ${data.message}`);
+    setJobRunning(true);
+  } catch (err) {
+    appendLog(`❌ ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload & Run Job';
+  }
+}
+
+// ── Manual Entry Tab ──────────────────────────────────────────────────────────
+function onContainerTypeChange() {
+  const type = document.getElementById('f_container_type').value;
+  document.querySelectorAll('.source-section').forEach(sec => {
+    sec.classList.toggle('active', sec.dataset.type === type);
+  });
+  // Reset column selector
+  document.getElementById('columnSelector').classList.remove('visible');
+  loadedColumns = [];
+  document.getElementById('loadColsStatus').textContent = '';
+}
+
+async function loadColumns() {
+  const containerType = document.getElementById('f_container_type').value;
+
+  // For DATABRICKS source — use source table. For others — use target table.
+  let catalog, schema, table;
+  if (containerType === 'DATABRICKS') {
+    catalog = document.getElementById('f_src_catalog').value.trim();
+    schema  = document.getElementById('f_src_schema').value.trim();
+    table   = document.getElementById('f_src_table').value.trim();
+  } else {
+    catalog = document.getElementById('f_tgt_catalog').value.trim();
+    schema  = document.getElementById('f_tgt_schema').value.trim();
+    table   = document.getElementById('f_tgt_table').value.trim();
+  }
+
+  if (!catalog || !schema || !table) {
+    const which = containerType === 'DATABRICKS' ? 'source' : 'target';
+    alert(`Please fill in the ${which} catalog, schema, and table before loading columns.`);
+    return;
+  }
+
+  const btn    = document.getElementById('loadColsBtn');
+  const status = document.getElementById('loadColsStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-top-color:var(--blue)"></span> Loading...';
+  status.textContent = '';
+
+  try {
+    const res  = await fetch(`${API}/table-columns?catalog=${encodeURIComponent(catalog)}&schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load columns');
+
+    loadedColumns = data.columns;
+    renderCheckboxes(data.columns);
+
+    document.getElementById('columnSelector').classList.add('visible');
+    status.textContent = `${data.columns.length} columns loaded from ${catalog}.${schema}.${table}`;
+  } catch (err) {
+    status.textContent = `❌ ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Load Columns';
+  }
+}
+
+function renderCheckboxes(columns) {
+  const groups = {
+    exclude:  { el: 'cb-exclude',  filter: () => true },
+    stats:    { el: 'cb-stats',    filter: c => c.is_numeric },
+    checksum: { el: 'cb-checksum', filter: () => true },
+    quality:  { el: 'cb-quality',  filter: () => true },
+  };
+
+  for (const [key, cfg] of Object.entries(groups)) {
+    const el   = document.getElementById(cfg.el);
+    el.innerHTML = '';
+    const cols = columns.filter(cfg.filter);
+
+    if (cols.length === 0) {
+      el.innerHTML = '<span style="color:var(--muted);font-size:12px;padding:4px">No eligible columns</span>';
+      continue;
+    }
+
+    for (const col of cols) {
+      const label = document.createElement('label');
+      const cb    = document.createElement('input');
+      cb.type  = 'checkbox';
+      cb.value = col.name;
+      cb.dataset.group = key;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = col.name;
+
+      if (col.is_numeric) {
+        const chip = document.createElement('span');
+        chip.className = 'chip-numeric';
+        chip.textContent = '#';
+        nameSpan.appendChild(chip);
+      }
+
+      label.appendChild(cb);
+      label.appendChild(nameSpan);
+      el.appendChild(label);
+    }
+  }
+}
+
+function selectAll(group, checked) {
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(cb => cb.checked = checked);
+}
+
+function getChecked(group) {
+  return Array.from(document.querySelectorAll(`[data-group="${group}"]:checked`)).map(cb => cb.value);
+}
+
+async function submitManualForm() {
+  if (jobRunning) { appendLog('⚠ A job is already running — please wait or cancel first.'); return; }
+
+  const entry = {
+    usecase:                          document.getElementById('f_usecase').value.trim(),
+    catalog:                          document.getElementById('f_catalog').value.trim(),
+    schema:                           document.getElementById('f_schema').value.trim(),
+    container_type:                   document.getElementById('f_container_type').value,
+    modes:                            document.getElementById('f_modes').value,
+    source_catalog_name:              document.getElementById('f_src_catalog').value.trim(),
+    source_schema_name:               document.getElementById('f_src_schema').value.trim(),
+    source_table_name:                document.getElementById('f_src_table').value.trim(),
+    target_catalog_name:              document.getElementById('f_tgt_catalog').value.trim(),
+    target_schema_name:               document.getElementById('f_tgt_schema').value.trim(),
+    target_table_name:                document.getElementById('f_tgt_table').value.trim(),
+    filter_condition:                 document.getElementById('f_filter_condition').value.trim(),
+    date_column_format:               document.getElementById('f_date_col_format').value.trim(),
+    column_excluded:                  getChecked('exclude'),
+    if_recon_then_statistics_for:     getChecked('stats'),
+    if_recon_then_checksum_for:       getChecked('checksum'),
+    if_recon_then_data_quality_for:   getChecked('quality'),
+    // SQL Server fields
+    sql_host:       document.getElementById('f_sql_host').value.trim(),
+    sql_port:       document.getElementById('f_sql_port').value.trim(),
+    sql_database:   document.getElementById('f_sql_database').value.trim(),
+    sql_table:      document.getElementById('f_sql_table').value.trim(),
+    sql_username:   document.getElementById('f_sql_username').value.trim(),
+    sql_password:   document.getElementById('f_sql_password').value.trim(),
+    // Snowflake fields
+    snowflake_account:    document.getElementById('f_sf_account').value.trim(),
+    snowflake_user:       document.getElementById('f_sf_user').value.trim(),
+    snowflake_password:   document.getElementById('f_sf_password').value.trim(),
+    snowflake_warehouse:  document.getElementById('f_sf_warehouse').value.trim(),
+    snowflake_database:   document.getElementById('f_sf_database').value.trim(),
+    snowflake_schema:     document.getElementById('f_sf_sf_schema').value.trim(),
+    snowflake_table:      document.getElementById('f_sf_table').value.trim(),
+    // BigQuery fields
+    gcp_project:    document.getElementById('f_gcp_project').value.trim(),
+    bigquery_dataset: document.getElementById('f_bq_dataset').value.trim(),
+    bigquery_table: document.getElementById('f_bq_table').value.trim(),
+    // ADLS fields
+    storage_name:   document.getElementById('f_storage_name').value.trim(),
+    container_name: document.getElementById('f_container_name').value.trim(),
+    source_path:    document.getElementById('f_adls_path').value.trim() || document.getElementById('f_s3_path').value.trim(),
+    source_file_format: document.getElementById('f_adls_format').value.trim() || document.getElementById('f_s3_format').value.trim(),
+    access_token_adls: document.getElementById('f_adls_token').value.trim(),
+    // S3 fields
+    s3_bucket:      document.getElementById('f_s3_bucket').value.trim(),
+    aws_access_key: document.getElementById('f_aws_key').value.trim(),
+    aws_secret_key: document.getElementById('f_aws_secret').value.trim(),
+    // REST API fields
+    api_url:    document.getElementById('f_api_url').value.trim(),
+    api_method: document.getElementById('f_api_method').value,
+    api_headers: document.getElementById('f_api_headers').value.trim(),
+    api_auth_token: document.getElementById('f_api_token').value.trim(),
+  };
+
+  // Basic validation
+  if (!entry.usecase)          return alert('Please enter a Usecase Name.');
+  if (!entry.target_table_name) return alert('Please enter the Target Table name.');
+
+  const btn = document.getElementById('formSubmitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting...';
+
+  try {
+    const res  = await fetch(`${API}/run-from-form`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(entry)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Submission failed');
+    appendLog(`⚙️ ${data.message}`);
+    setJobRunning(true);
+  } catch (err) {
+    appendLog(`❌ ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit & Run Job';
+  }
+}
+
+// ── Cancel Job ────────────────────────────────────────────────────────────────
+async function cancelJob() {
+  const badge = document.getElementById('statusBadge');
+  badge.textContent = '● CANCELLING';
+  badge.className = 'running';
+  document.getElementById('cancelBtn').classList.remove('visible');
+  try {
+    const res  = await fetch(`${API}/cancel-job`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    // SSE will send "🛑 ... cancelled by user" which triggers setJobRunning(false)
+  } catch (err) {
+    appendLog(`❌ Cancel failed: ${err.message}`);
+    setJobRunning(true); // restore cancel button
+  }
+}
+
+// ── Results Rendering ─────────────────────────────────────────────────────────
+async function fetchAndRenderResults() {
+  try {
+    const res  = await fetch(`${API}/final-result`);
+    const data = await res.json();
+    if (res.status === 202 || !data.logs) return; // not ready
+    renderResults(data);
+    document.getElementById('resultsTimestamp').textContent =
+      `Last updated: ${new Date().toLocaleTimeString('en-GB', { hour12: false })}`;
+    setJobDone();
+    switchTab('results');
+  } catch (err) {
+    appendLog(`❌ Failed to load results: ${err.message}`);
+  }
+}
+
+function boolDisplay(val) {
+  if (val === true  || val === 'true'  || val === 1 || val === 'True')  return { icon: '✅', text: 'PASS', cls: 'badge-pass' };
+  if (val === false || val === 'false' || val === 0 || val === 'False') return { icon: '❌', text: 'FAIL', cls: 'badge-fail' };
+  return { icon: '—', text: 'N/A', cls: 'badge-na' };
+}
+
+function formatArray(arr) {
+  if (!arr) return '—';
+  if (Array.isArray(arr)) return arr.join(', ') || '—';
+  if (typeof arr === 'string') {
+    try { return JSON.parse(arr).join(', ') || '—'; } catch { return arr; }
+  }
+  return String(arr);
+}
+
+// Store all result data for modal access
+let allResultsData = {};
+
+function makeLogTable(rows) {
+  if (!rows || rows.length === 0) return '<span style="color:var(--muted);font-size:11px">No entries</span>';
+  const cols = Object.keys(rows[0]);
+  return `<table class="log-table">
+    <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderResults({ usecases, logs }) {
+  const grid = document.getElementById('resultsGrid');
+  const none = document.getElementById('noResults');
+  grid.innerHTML = '';
+  allResultsData = logs || {};
+
+  if (!usecases || usecases.length === 0) {
+    none.style.display = 'block';
+    grid.style.display = 'none';
+    return;
+  }
+
+  none.style.display = 'none';
+  grid.style.display = 'grid';
+
+  for (const usecase of usecases) {
+    const entry = logs[usecase];
+    if (!entry) continue;
+
+    if (entry.error) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.onclick = () => openModal(usecase, entry);
+      card.innerHTML = `
+        <div class="result-card-header">
+          <span class="result-card-title">${usecase}</span>
+          <span class="badge badge-fail">ERROR</span>
+        </div>
+        <div style="padding:12px 16px;font-size:12px;color:var(--red)">${entry.error}</div>`;
+      grid.appendChild(card);
+      continue;
+    }
+
+    const row = (entry.recon_result && entry.recon_result[0]) || {};
+    const rowMatch  = boolDisplay(row.row_count_match);
+    const colMatch  = boolDisplay(row.column_count_match);
+    const schMatch  = boolDisplay(row.schema_match);
+    const hashMatch = boolDisplay(row.hash_match);
+    const dupMatch  = boolDisplay(row.row_dup_match);
+
+    const allPass = [row.row_count_match, row.column_count_match, row.schema_match, row.hash_match]
+      .every(v => v === true || v === 'true' || v === 1 || v === 'True');
+
+    const overallBadge = Object.keys(row).length === 0
+      ? '<span class="badge badge-na">NO DATA</span>'
+      : allPass
+        ? '<span class="badge badge-pass">ALL PASS</span>'
+        : '<span class="badge badge-fail">FAILED</span>';
+
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.onclick = () => openModal(usecase, entry);
+    card.innerHTML = `
+      <div class="result-card-header">
+        <span class="result-card-title">${usecase}</span>
+        ${overallBadge}
+      </div>
+      <div class="result-checks">
+        <div class="check-item"><span class="check-icon">${rowMatch.icon}</span> Row Count (${row.row_count_source ?? '?'} vs ${row.row_count_target ?? '?'})</div>
+        <div class="check-item"><span class="check-icon">${colMatch.icon}</span> Column Count (${row.column_count_source ?? '?'} vs ${row.column_count_target ?? '?'})</div>
+        <div class="check-item"><span class="check-icon">${schMatch.icon}</span> Schema Match</div>
+        <div class="check-item"><span class="check-icon">${hashMatch.icon}</span> Checksum Match</div>
+        <div class="check-item"><span class="check-icon">${dupMatch.icon}</span> Duplicates (${row.row_dup_source ?? '?'} vs ${row.row_dup_target ?? '?'})</div>
+        <div class="check-item" style="font-size:11px;color:var(--muted)">${row.execution_date ? '📅 ' + row.execution_date : ''}</div>
+      </div>`;
+
+    grid.appendChild(card);
+  }
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function openModal(usecase, entry) {
+  const modal = document.getElementById('resultModal');
+  const title = document.getElementById('modalTitle');
+  const body  = document.getElementById('modalBody');
+
+  title.textContent = usecase;
+
+  if (entry.error) {
+    body.innerHTML = `<div style="color:var(--red);font-size:14px;padding:20px">${entry.error}</div>`;
+    modal.classList.add('visible');
+    return;
+  }
+
+  const row = (entry.recon_result && entry.recon_result[0]) || {};
+  const rowMatch  = boolDisplay(row.row_count_match);
+  const colMatch  = boolDisplay(row.column_count_match);
+  const schMatch  = boolDisplay(row.schema_match);
+  const hashMatch = boolDisplay(row.hash_match);
+  const dupMatch  = boolDisplay(row.row_dup_match);
+
+  const allPass = [row.row_count_match, row.column_count_match, row.schema_match, row.hash_match]
+    .every(v => v === true || v === 'true' || v === 1 || v === 'True');
+  const statusBadge = Object.keys(row).length === 0
+    ? '<span class="badge badge-na">NO DATA</span>'
+    : allPass
+      ? '<span class="badge badge-pass" style="font-size:13px;padding:5px 14px">ALL PASS</span>'
+      : '<span class="badge badge-fail" style="font-size:13px;padding:5px 14px">FAILED</span>';
+
+  body.innerHTML = `
+    <div style="margin-bottom:20px">${statusBadge}</div>
+
+    <div class="detail-section">
+      <h5>Reconciliation Checks</h5>
+      <div class="result-checks" style="padding:0;margin-bottom:8px">
+        <div class="check-item"><span class="check-icon">${rowMatch.icon}</span> Row Count (${row.row_count_source ?? '?'} vs ${row.row_count_target ?? '?'})</div>
+        <div class="check-item"><span class="check-icon">${colMatch.icon}</span> Column Count (${row.column_count_source ?? '?'} vs ${row.column_count_target ?? '?'})</div>
+        <div class="check-item"><span class="check-icon">${schMatch.icon}</span> Schema Match</div>
+        <div class="check-item"><span class="check-icon">${hashMatch.icon}</span> Checksum Match</div>
+        <div class="check-item"><span class="check-icon">${dupMatch.icon}</span> Duplicates (${row.row_dup_source ?? '?'} vs ${row.row_dup_target ?? '?'})</div>
+        <div class="check-item" style="font-size:11px;color:var(--muted)">${row.execution_date ? '📅 ' + row.execution_date : ''}</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h5>Structure</h5>
+      <div class="detail-row"><span class="detail-key">Source table</span><span class="detail-val">${row.source_table ?? '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">Target table</span><span class="detail-val">${row.target_table ?? '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">Schema (source)</span><span class="detail-val">${formatArray(row.schema_source)}</span></div>
+      <div class="detail-row"><span class="detail-key">Schema (target)</span><span class="detail-val">${formatArray(row.schema_target)}</span></div>
+      <div class="detail-row"><span class="detail-key">Excluded columns</span><span class="detail-val">${formatArray(row.excluded_columns_in_source)}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <h5>Statistics</h5>
+      <div class="detail-row"><span class="detail-key">Columns checked</span><span class="detail-val">${formatArray(row.columns_for_numerical_check)}</span></div>
+      <div class="detail-row"><span class="detail-key">Mean (source)</span><span class="detail-val">${formatArray(row.mean_source)}</span></div>
+      <div class="detail-row"><span class="detail-key">Mean (target)</span><span class="detail-val">${formatArray(row.mean_target)}</span></div>
+      <div class="detail-row"><span class="detail-key">Mean match</span><span class="detail-val">${formatArray(row.mean_match)}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <h5>Checksum</h5>
+      <div class="detail-row"><span class="detail-key">Columns checked</span><span class="detail-val">${formatArray(row.columns_for_hash_check)}</span></div>
+      <div class="detail-row"><span class="detail-key">Hash match</span><span class="detail-val">${row.hash_match ?? '—'}</span></div>
+      <div class="detail-row"><span class="detail-key">Message</span><span class="detail-val">${row.hash_message ?? '—'}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <h5>Data Quality</h5>
+      <div class="detail-row"><span class="detail-key">Columns checked</span><span class="detail-val">${formatArray(row.columns_for_quality_check)}</span></div>
+      <div class="detail-row"><span class="detail-key">Nulls (source)</span><span class="detail-val">${formatArray(row.null_source)}</span></div>
+      <div class="detail-row"><span class="detail-key">Nulls (target)</span><span class="detail-val">${formatArray(row.null_target)}</span></div>
+      <div class="detail-row"><span class="detail-key">Null match</span><span class="detail-val">${formatArray(row.null_match)}</span></div>
+      <div class="detail-row"><span class="detail-key">Duplicates (source)</span><span class="detail-val">${formatArray(row.dup_source)}</span></div>
+      <div class="detail-row"><span class="detail-key">Duplicates (target)</span><span class="detail-val">${formatArray(row.dup_target)}</span></div>
+      <div class="detail-row"><span class="detail-key">Missing values (source)</span><span class="detail-val">${formatArray(row.miss_source)}</span></div>
+      <div class="detail-row"><span class="detail-key">Missing values (target)</span><span class="detail-val">${formatArray(row.miss_target)}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <h5 style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('visible');this.textContent=this.nextElementSibling.classList.contains('visible')?'▼ Recon Log (${(entry.recon_log||[]).length})':'▶ Recon Log (${(entry.recon_log||[]).length})'">▶ Recon Log (${(entry.recon_log||[]).length})</h5>
+      <div class="log-section-content">${makeLogTable(entry.recon_log)}</div>
+    </div>
+    <div class="detail-section">
+      <h5 style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('visible');this.textContent=this.nextElementSibling.classList.contains('visible')?'▼ Historical Log (${(entry.historical_log||[]).length})':'▶ Historical Log (${(entry.historical_log||[]).length})'">▶ Historical Log (${(entry.historical_log||[]).length})</h5>
+      <div class="log-section-content">${makeLogTable(entry.historical_log)}</div>
+    </div>
+  `;
+
+  modal.classList.add('visible');
+}
+
+function closeModal() {
+  document.getElementById('resultModal').classList.remove('visible');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── History ────────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const res = await fetch(`${API}/results-history`);
+    const history = await res.json();
+    const list = document.getElementById('historyList');
+    const none = document.getElementById('noResults');
+    const grid = document.getElementById('resultsGrid');
+
+    if (!history || history.length === 0) {
+      list.innerHTML = '';
+      none.style.display = 'block';
+      grid.style.display = 'none';
+      return;
+    }
+
+    none.style.display = 'none';
+    grid.style.display = 'none';
+    list.innerHTML = '<h3 style="font-size:14px;margin-bottom:12px;color:var(--blue)">Run History</h3>';
+
+    for (let i = 0; i < history.length; i++) {
+      const run = history[i];
+      const ts = new Date(run.timestamp).toLocaleString('en-GB', { hour12: false });
+      const ucCount = (run.usecases || []).length;
+      const div = document.createElement('div');
+      div.className = 'history-run';
+      div.onclick = () => {
+        document.getElementById('historyList').innerHTML = '';
+        renderResults(run);
+        document.getElementById('resultsTimestamp').textContent = `Run: ${ts}`;
+      };
+      div.innerHTML = `
+        <div class="history-run-info">
+          <span class="history-run-file">${run.fileName || 'Unknown'}</span>
+          <span class="history-run-time">${ts}</span>
+        </div>
+        <span class="history-run-usecases">${ucCount} usecase${ucCount !== 1 ? 's' : ''}</span>`;
+      list.appendChild(div);
+    }
+  } catch (err) {
+    appendLog('Failed to load history: ' + err.message);
+  }
+}
+
+// ── Log Panel Toggle ──────────────────────────────────────────────────────────
+let logPanelOpen = true;
+function toggleLogPanel() {
+  const panel = document.getElementById('logPanel');
+  const logs  = document.getElementById('logs');
+  const title = document.getElementById('logPanelTitle');
+  logPanelOpen = !logPanelOpen;
+  logs.style.display = logPanelOpen ? 'block' : 'none';
+  panel.style.height = logPanelOpen ? 'var(--log-h)' : '28px';
+  title.textContent = logPanelOpen ? '▼ Live Logs' : '▶ Live Logs';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function initStatus() {
+  try {
+    const res = await fetch(`${API}/job-status`);
+    const data = await res.json();
+    if (data.isJobRunning) {
+      setJobRunning(true);
+      appendLog('🔄 Reconnected — a job is currently running.');
+    }
+  } catch (e) { /* server not reachable yet */ }
+}
+connectSSE();
+initStatus();
+</script>
+</body>
+</html>
