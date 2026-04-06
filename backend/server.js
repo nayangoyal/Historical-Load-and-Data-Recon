@@ -18,6 +18,10 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 // Connect to MongoDB on startup (non-blocking — falls back to JSON if unavailable)
 connectDB();
 
+// Ensure uploads directory exists (Render doesn't persist empty dirs from git)
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
 const app  = express();
 const port = process.env.PORT || 3000;
 
