@@ -394,6 +394,14 @@ app.post('/cancel-job', async (req, res) => {
 });
 
 
+// ── GET /health ───────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  const vars = ['DATABRICKS_HOST', 'PAT_TOKEN', 'JOB_ID', 'TABLE_TOKEN', 'TABLE_HOST', 'TABLE_PATH', 'MONGODB_URI'];
+  const status = {};
+  vars.forEach(v => { status[v] = process.env[v] ? '✅ set' : '❌ MISSING'; });
+  res.json(status);
+});
+
 // ── GET /job-status ───────────────────────────────────────────────────────────
 
 app.get('/job-status', async (req, res) => {
