@@ -10,8 +10,13 @@ const { triggerAndMonitorJob }             = require('./databricksJobRunner');
 const { extractUsecasesFromCSV }           = require('./csvUsecaseParser');
 const { fetchAllLogsAndResultsForUsecases } = require('./databricksLogFetcher');
 const { cancelRun }                        = require('./cancelRunJob');
+const { connectDB, isMongoReady }          = require('./db');
+const History                              = require('./models/History');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+// Connect to MongoDB on startup (non-blocking — falls back to JSON if unavailable)
+connectDB();
 
 const app  = express();
 const port = process.env.PORT || 3000;
@@ -70,18 +75,31 @@ const sharedState = {
 };
 module.exports.sharedState = sharedState;
 
-// ── Results History ─────────────────────────────────────────────────────────
+// ── Results History (MongoDB + JSON fallback) ────────────────────────────────
 const HISTORY_FILE = path.join(__dirname, 'results_history.json');
 
-function loadHistory() {
+async function loadHistory() {
+  if (isMongoReady()) {
+    return await History.find().sort({ timestamp: -1 }).lean();
+  }
+  // Fallback: local JSON file (local dev without MongoDB)
   try { return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')); }
   catch { return []; }
 }
 
-function saveToHistory(entry) {
-  const history = loadHistory();
-  history.unshift(entry); // newest first
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+async function saveToHistory(entry) {
+  if (isMongoReady()) {
+    await History.create(entry);
+    return;
+  }
+  // Fallback: local JSON file
+  try {
+    const history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+    history.unshift(entry);
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+  } catch {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify([entry], null, 2));
+  }
 }
 
 
@@ -217,8 +235,8 @@ app.post('/upload-csv', (req, res, next) => {
 
     // Fire-and-forget — save to history on completion
     const csvName = req.file.originalname;
-    triggerAndMonitorJob(sendLogToClients, csvName, sharedState).then(() => {
-      if (sharedState.finalLogsResult) saveToHistory({ timestamp: new Date().toISOString(), fileName: csvName, ...sharedState.finalLogsResult });
+    triggerAndMonitorJob(sendLogToClients, csvName, sharedState).then(async () => {
+      if (sharedState.finalLogsResult) await saveToHistory({ timestamp: new Date().toISOString(), fileName: csvName, ...sharedState.finalLogsResult });
     });
   } catch (err) {
     sharedState.isJobRunning = false;
@@ -270,8 +288,8 @@ app.post('/run-from-form', async (req, res) => {
 
     res.status(200).json({ message: '✅ Form submitted. Job starting...', fileName });
 
-    triggerAndMonitorJob(sendLogToClients, fileName, sharedState).then(() => {
-      if (sharedState.finalLogsResult) saveToHistory({ timestamp: new Date().toISOString(), fileName, ...sharedState.finalLogsResult });
+    triggerAndMonitorJob(sendLogToClients, fileName, sharedState).then(async () => {
+      if (sharedState.finalLogsResult) await saveToHistory({ timestamp: new Date().toISOString(), fileName, ...sharedState.finalLogsResult });
     });
   } catch (err) {
     sharedState.isJobRunning = false;
@@ -344,8 +362,13 @@ app.get('/final-result', (req, res) => {
 
 // ── GET /results-history ──────────────────────────────────────────────────────
 
-app.get('/results-history', (req, res) => {
-  res.status(200).json(loadHistory());
+app.get('/results-history', async (req, res) => {
+  try {
+    const history = await loadHistory();
+    res.status(200).json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
@@ -453,7 +476,7 @@ app.use((err, req, res, next) => {
 
 // ── Catch-all: serve React app for any non-API route ─────────────────────────
 if (fs.existsSync(distPath)) {
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  app.get('/{*path}', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
 
 // ── Start Server ──────────────────────────────────────────────────────────────
