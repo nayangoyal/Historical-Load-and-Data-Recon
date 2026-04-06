@@ -14,13 +14,16 @@ const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const app  = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// Serve frontend
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
+// Serve built React frontend (production)
+const distPath = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
 
 const PAT_TOKEN        = process.env.PAT_TOKEN;
 const DATABRICKS_HOST  = (process.env.DATABRICKS_HOST || '').replace(/\/$/, '');
@@ -447,6 +450,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message });
 });
 
+
+// ── Catch-all: serve React app for any non-API route ─────────────────────────
+if (fs.existsSync(distPath)) {
+  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 
